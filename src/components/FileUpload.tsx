@@ -15,6 +15,7 @@ import {
 
 interface FileUploadProps {
   onFilesSelected: (files: File[]) => void;
+  onExtractedText?: (filename: string, text: string) => void;
 }
 
 interface ExtractedText {
@@ -22,7 +23,7 @@ interface ExtractedText {
   text: string;
 }
 
-export function FileUpload({ onFilesSelected }: FileUploadProps) {
+export function FileUpload({ onFilesSelected, onExtractedText }: FileUploadProps) {
   const [dragActive, setDragActive] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [extractedTexts, setExtractedTexts] = useState<ExtractedText[]>([]);
@@ -43,6 +44,7 @@ export function FileUpload({ onFilesSelected }: FileUploadProps) {
     setIsLoading(true);
     setError(null);
     try {
+      console.log('Processing file:', file.name);
       const formData = new FormData();
       formData.append('file', file);
 
@@ -51,17 +53,25 @@ export function FileUpload({ onFilesSelected }: FileUploadProps) {
         body: formData,
       });
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to extract text');
-      }
-
       const data = await response.json();
-      setExtractedTexts(prev => [...prev, { filename: data.filename, text: data.text }]);
-      setShowModal(true);
+
+      if (response.ok) {
+        console.log('Text extracted successfully:', {
+          filename: file.name,
+          textLength: data.text.length
+        });
+        const newText: ExtractedText = { filename: file.name, text: data.text };
+        setExtractedTexts(prev => [...prev, newText]);
+        onExtractedText?.(file.name, data.text);
+      } else {
+        console.error('Error response:', data);
+        throw new Error(data.error || 'Failed to extract text from file');
+      }
     } catch (error) {
-      console.error('Error extracting text:', error);
-      setError(error instanceof Error ? error.message : 'Failed to process file');
+      console.error('Error processing file:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to process file';
+      setError(errorMessage);
+      setShowModal(true);
     } finally {
       setIsLoading(false);
     }
@@ -72,18 +82,19 @@ export function FileUpload({ onFilesSelected }: FileUploadProps) {
     e.stopPropagation();
     setDragActive(false);
 
-    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      const filesArray = Array.from(e.dataTransfer.files);
-      const pdfFiles = filesArray.filter(file => file.type === 'application/pdf');
+    const { files } = e.dataTransfer;
+    if (files && files.length > 0) {
+      const pdfFiles = Array.from(files).filter(
+        file => file.type === 'application/pdf'
+      );
       
       if (pdfFiles.length === 0) {
         setError('Please upload PDF files only');
+        setShowModal(true);
         return;
       }
 
       onFilesSelected(pdfFiles);
-      
-      // Process each PDF file
       for (const file of pdfFiles) {
         await processFile(file);
       }
@@ -91,18 +102,21 @@ export function FileUpload({ onFilesSelected }: FileUploadProps) {
   };
 
   const handleChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      const filesArray = Array.from(e.target.files);
-      const pdfFiles = filesArray.filter(file => file.type === 'application/pdf');
-      
+    e.preventDefault();
+    const { files } = e.target;
+
+    if (files && files.length > 0) {
+      const pdfFiles = Array.from(files).filter(
+        file => file.type === 'application/pdf'
+      );
+
       if (pdfFiles.length === 0) {
         setError('Please upload PDF files only');
+        setShowModal(true);
         return;
       }
 
       onFilesSelected(pdfFiles);
-      
-      // Process each PDF file
       for (const file of pdfFiles) {
         await processFile(file);
       }
@@ -110,71 +124,71 @@ export function FileUpload({ onFilesSelected }: FileUploadProps) {
   };
 
   return (
-    <>
-      <div className="w-full">
-        <div
-          className={`relative rounded-lg border-2 border-dashed p-6 transition-colors
-            ${dragActive ? 'border-primary bg-primary/10' : 'border-gray-300'}
-            ${dragActive ? 'border-primary' : 'hover:border-primary/50'}`}
-          onDragEnter={handleDrag}
-          onDragLeave={handleDrag}
-          onDragOver={handleDrag}
-          onDrop={handleDrop}
+    <div className="w-full space-y-4">
+      <div
+        className={`relative border-2 border-dashed rounded-lg p-8 text-center ${
+          dragActive ? 'border-primary bg-primary/5' : 'border-gray-300'
+        }`}
+        onDragEnter={handleDrag}
+        onDragLeave={handleDrag}
+        onDragOver={handleDrag}
+        onDrop={handleDrop}
+      >
+        <input
+          type="file"
+          id="file-upload"
+          multiple
+          accept=".pdf"
+          className="hidden"
+          onChange={handleChange}
+        />
+        <label
+          htmlFor="file-upload"
+          className="cursor-pointer inline-flex flex-col items-center gap-2"
         >
-          <Input
-            type="file"
-            multiple
-            accept=".pdf"
-            onChange={handleChange}
-            className="absolute inset-0 cursor-pointer opacity-0"
-            disabled={isLoading}
-          />
-          <div className="flex flex-col items-center justify-center space-y-2 text-center">
-            <Upload className="h-8 w-8 text-gray-500" />
-            <div className="text-sm text-gray-600">
-              {isLoading ? (
-                'Processing...'
-              ) : (
-                <>
-                  <span className="font-semibold text-primary">Click to upload</span> or drag and drop
-                </>
-              )}
-            </div>
-            <p className="text-xs text-gray-500">PDF files only</p>
-          </div>
-        </div>
-
-        {error && (
-          <div className="mt-2 flex items-center gap-2 text-sm text-red-500">
-            <AlertCircle className="h-4 w-4" />
-            <span>{error}</span>
-          </div>
-        )}
+          <Upload className="h-8 w-8 text-gray-500" />
+          <span className="text-sm text-gray-600">
+            {isLoading ? (
+              'Processing...'
+            ) : (
+              <>
+                Drag & drop PDF files here, or <span className="text-primary">browse</span>
+              </>
+            )}
+          </span>
+        </label>
       </div>
 
-      <Modal open={showModal} onOpenChange={setShowModal}>
-        <ModalContent>
-          <ModalHeader>
-            <ModalTitle>Extracted Text</ModalTitle>
-            <ModalDescription>
-              Text extracted from your PDF files:
-            </ModalDescription>
-          </ModalHeader>
-          <div className="max-h-[60vh] overflow-y-auto p-4">
+      {extractedTexts.length > 0 && (
+        <div className="mt-4">
+          <h3 className="font-medium mb-2">Extracted Text:</h3>
+          <div className="space-y-2">
             {extractedTexts.map((item, index) => (
-              <div key={index} className="mb-4">
-                <h3 className="font-medium text-sm mb-2">{item.filename}</h3>
-                <pre className="whitespace-pre-wrap text-sm bg-muted p-2 rounded">
-                  {item.text}
-                </pre>
+              <div key={index} className="p-4 bg-gray-50 rounded-lg">
+                <h4 className="font-medium mb-2">{item.filename}</h4>
+                <p className="text-sm whitespace-pre-wrap">{item.text}</p>
               </div>
             ))}
           </div>
-          <ModalFooter>
-            <Button onClick={() => setShowModal(false)}>Close</Button>
-          </ModalFooter>
-        </ModalContent>
-      </Modal>
-    </>
+        </div>
+      )}
+
+      {error && (
+        <Modal open={showModal} onOpenChange={() => setShowModal(false)}>
+          <ModalContent>
+            <ModalHeader>
+              <ModalTitle>Error</ModalTitle>
+              <ModalDescription className="flex items-center gap-2 text-destructive">
+                <AlertCircle className="h-4 w-4" />
+                {error}
+              </ModalDescription>
+            </ModalHeader>
+            <ModalFooter>
+              <Button onClick={() => setShowModal(false)}>Close</Button>
+            </ModalFooter>
+          </ModalContent>
+        </Modal>
+      )}
+    </div>
   );
 }
