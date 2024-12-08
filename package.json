@@ -19,9 +19,11 @@
     "clsx": "^2.1.1",
     "dotenv": "^16.4.7",
     "formidable": "^3.5.2",
+    "groq-sdk": "^0.9.0",
     "llamaindex": "^0.8.26",
     "lucide-react": "^0.468.0",
     "next": "15.0.4",
+    "openai": "^4.76.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "tailwind-merge": "^2.5.5"
